@@ -1075,9 +1075,29 @@ export default function BrainrotTracker() {
   const [tab, setTab] = useState("tracker");
 
   // ── Per-game entries: { gameId: [{id, petName, account, msType, msValue, mutation, quantity}] } ──
-  const [allEntries, setAllEntries] = useState({ steal_a_brainrot: IMPORT_DATA.entries, escape_tsunami: [] });
+  const [allEntries, setAllEntries] = useState(() => {
+    try {
+      const saved = localStorage.getItem("bt_entries");
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return { steal_a_brainrot: IMPORT_DATA.entries, escape_tsunami: [] };
+  });
   // ── Per-game accounts ──
-  const [allAccounts, setAllAccounts] = useState({ steal_a_brainrot: IMPORT_DATA.accounts, escape_tsunami: [] });
+  const [allAccounts, setAllAccounts] = useState(() => {
+    try {
+      const saved = localStorage.getItem("bt_accounts");
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return { steal_a_brainrot: IMPORT_DATA.accounts, escape_tsunami: [] };
+  });
+
+  // ── Auto-save to localStorage whenever data changes ──
+  useEffect(() => {
+    try { localStorage.setItem("bt_entries", JSON.stringify(allEntries)); } catch (e) {}
+  }, [allEntries]);
+  useEffect(() => {
+    try { localStorage.setItem("bt_accounts", JSON.stringify(allAccounts)); } catch (e) {}
+  }, [allAccounts]);
 
   // ── Add form ──
   const [showForm, setShowForm] = useState(false);
