@@ -1432,13 +1432,18 @@ export default function BrainrotTracker() {
   // ═══════════════════════════════════════════════════════════════
 
   return (
-    <div style={{
-      minHeight: "100vh",
-      background: "linear-gradient(180deg, #0a0a14 0%, #0f0f1e 50%, #0a0a14 100%)",
-      color: "#e0e0e0",
-      fontFamily: "'Nunito', 'Segoe UI', system-ui, sans-serif",
-      overflowX: "hidden", boxSizing: "border-box",
-    }}>
+    <>
+      <style>{`
+        *, *::before, *::after { box-sizing: border-box; }
+        html, body, #root { margin: 0; padding: 0; background: #0a0a14; min-height: 100vh; }
+      `}</style>
+      <div style={{
+        minHeight: "100vh",
+        background: "linear-gradient(180deg, #0a0a14 0%, #0f0f1e 50%, #0a0a14 100%)",
+        color: "#e0e0e0",
+        fontFamily: "'Nunito', 'Segoe UI', system-ui, sans-serif",
+        overflowX: "hidden", boxSizing: "border-box",
+      }}>
       {/* ═══ HEADER ═══ */}
       <div style={{
         borderBottom: "1px solid #1a1a2e", padding: "16px 20px",
@@ -2229,5 +2234,6 @@ export default function BrainrotTracker() {
         <div style={{ padding: "28px 0 14px" }} />
       </div>
     </div>
+    </>
   );
 }
