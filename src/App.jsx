@@ -1437,6 +1437,7 @@ export default function BrainrotTracker() {
       background: "linear-gradient(180deg, #0a0a14 0%, #0f0f1e 50%, #0a0a14 100%)",
       color: "#e0e0e0",
       fontFamily: "'Nunito', 'Segoe UI', system-ui, sans-serif",
+      overflowX: "hidden", boxSizing: "border-box",
     }}>
       {/* ═══ HEADER ═══ */}
       <div style={{
@@ -1526,11 +1527,11 @@ export default function BrainrotTracker() {
                               <div style={{
                                 display: "flex", justifyContent: "space-between", alignItems: "center",
                                 padding: "8px 12px", borderRadius: 10, background: "#0e0e1a",
-                                border: "1px solid transparent",
+                                border: "1px solid transparent", flexWrap: "wrap", gap: 6,
                               }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
-                                  <span style={{ color: "#e0e0e0", fontWeight: 600, fontSize: 13 }}>{a}</span>
-                                  <span style={{ fontSize: 11, color: "#555" }}>({cnt} entries)</span>
+                                <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
+                                  <span style={{ color: "#e0e0e0", fontWeight: 600, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a}</span>
+                                  <span style={{ fontSize: 11, color: "#555", flexShrink: 0 }}>({cnt})</span>
                                 </div>
                                 <div style={{ display: "flex", gap: 4 }}>
                                   <button onClick={() => { setAcctModalIdx(idx); setAcctModalName(a); }}
@@ -1811,8 +1812,8 @@ export default function BrainrotTracker() {
                 </div>
 
                 {/* Mutation + Qty + Max Capacity */}
-                <div style={{ display: "flex", gap: 10 }}>
-                  <div style={{ flex: 1 }}>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <div style={{ flex: "1 1 120px", minWidth: 100 }}>
                     <label style={lbl}>Mutation</label>
                     <select value={fMutation} onChange={(e) => setFMutation(e.target.value)} style={inp()}>
                       {game.mutations.map((m) => (
@@ -1820,13 +1821,13 @@ export default function BrainrotTracker() {
                       ))}
                     </select>
                   </div>
-                  <div style={{ flex: 1 }}>
+                  <div style={{ flex: "1 1 80px", minWidth: 70 }}>
                     <label style={lbl}>Quantity</label>
                     <input type="number" min={1} value={fQty}
                       onChange={(e) => setFQty(Math.max(1, parseInt(e.target.value) || 1))}
                       style={inp()} />
                   </div>
-                  <div style={{ flex: 1 }}>
+                  <div style={{ flex: "1 1 80px", minWidth: 70 }}>
                     <label style={lbl}>Base Max Inventory</label>
                     <input type="number" min={1} value={fMaxCap}
                       onChange={(e) => setFMaxCap(Math.max(1, parseInt(e.target.value) || 10))}
@@ -2025,71 +2026,47 @@ export default function BrainrotTracker() {
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {/* Header */}
-                <div style={{
-                  display: "grid",
-                  gridTemplateColumns: "2fr 1.2fr 90px 70px 1fr 90px 80px",
-                  padding: "8px 14px", borderRadius: 10, background: "#0e0e1a",
-                  fontSize: 10, fontWeight: 700, color: "#555", textTransform: "uppercase",
-                  letterSpacing: 0.5, gap: 6, alignItems: "center",
-                }}>
-                  <span>Pet</span><span>Account</span><span>Qty</span>
-                  <span>Type</span><span>Mutation</span><span>M/s</span><span>Acct Stock</span>
-                </div>
 
                 {searchResults.map((e) => {
                   const mc = msColor(e.msType);
-                  // Per-account stock: quantity of this pet+msType in this account only
                   const acctStock = entries.filter((x) => x.petName === e.petName && x.account === e.account && x.msType === e.msType && x.msValue === e.msValue)
                     .reduce((s, x) => s + x.quantity, 0);
                   return (
                     <div key={e.id} style={{
-                      display: "grid",
-                      gridTemplateColumns: "2fr 1.2fr 90px 70px 1fr 90px 80px",
-                      padding: "10px 14px", borderRadius: 10,
-                      background: "#12121f",
-                      border: "1px solid #1e1e30",
-                      fontSize: 13, alignItems: "center", gap: 6,
+                      padding: "10px 12px", borderRadius: 10,
+                      background: "#12121f", border: "1px solid #1e1e30",
                     }}>
-                      {/* Pet */}
-                      <div>
-                        <span style={{ fontWeight: 600, color: "#e0e0e0", cursor: "pointer" }}
+                      {/* Row 1: Pet name + Acct Stock */}
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                        <span style={{ fontWeight: 700, fontSize: 14, color: "#e0e0e0", cursor: "pointer", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
                           onClick={() => handleEdit(e)}>
                           {e.petName}
                         </span>
+                        <span style={{
+                          fontSize: 12, fontWeight: 700, color: "#27ae60", flexShrink: 0,
+                          padding: "2px 8px", borderRadius: 6, background: "#27ae6012",
+                        }}>Stock: {acctStock}</span>
                       </div>
-                      {/* Account */}
-                      <span style={{ color: "#888", fontSize: 12 }}>👤 {e.account}</span>
-                      {/* Qty with +/- */}
-                      <QtyControl qty={e.quantity} color={game.color}
-                        onMinus={() => handleQtyChange(e.id, -1)}
-                        onPlus={() => handleQtyChange(e.id, 1)} />
-                      {/* Type */}
-                      <span style={{
-                        fontSize: 11, padding: "2px 6px", borderRadius: 5,
-                        background: `${mc}15`, color: mc, fontWeight: 700,
-                        textAlign: "center",
-                      }}>{e.msType}</span>
-                      {/* Mutation */}
-                      <span style={{
-                        color: e.mutation !== "None" ? "#8e44ad" : "#555",
-                        fontWeight: e.mutation !== "None" ? 600 : 400, fontSize: 12,
-                      }}>
-                        {e.mutation !== "None" ? `✨ ${e.mutation}` : "—"}
-                      </span>
-                      {/* m/s — per this entry only (not combined) */}
-                      <span style={{ color: "#e0e0e0", fontWeight: 700, fontSize: 12 }}>
-                        {fmtNum(e.msValue)} {fmtSuffix(e.msValue)}/s
-                      </span>
-                      {/* Acct Stock — quantity of this pet in this account only */}
-                      <span style={{
-                        fontSize: 12, fontWeight: 700, textAlign: "center",
-                        color: "#27ae60",
-                        padding: "3px 8px", borderRadius: 6,
-                        background: "#27ae6012",
-                      }}>
-                        {acctStock}
-                      </span>
+                      {/* Row 2: Account */}
+                      <div style={{ fontSize: 11, color: "#888", marginBottom: 6 }}>👤 {e.account}</div>
+                      {/* Row 3: Type + Mutation + M/s + Qty */}
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                        <span style={{
+                          fontSize: 10, padding: "2px 6px", borderRadius: 5,
+                          background: `${mc}15`, color: mc, fontWeight: 700,
+                        }}>{e.msType}</span>
+                        {e.mutation !== "None" && (
+                          <span style={{ fontSize: 10, color: "#8e44ad", fontWeight: 600 }}>✨ {e.mutation}</span>
+                        )}
+                        <span style={{ fontSize: 12, fontWeight: 700, color: "#e0e0e0" }}>
+                          {fmtNum(e.msValue)} {fmtSuffix(e.msValue)}/s
+                        </span>
+                        <div style={{ marginLeft: "auto" }}>
+                          <QtyControl qty={e.quantity} color={game.color}
+                            onMinus={() => handleQtyChange(e.id, -1)}
+                            onPlus={() => handleQtyChange(e.id, 1)} />
+                        </div>
+                      </div>
                     </div>
                   );
                 })}
