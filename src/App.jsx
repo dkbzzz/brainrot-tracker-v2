@@ -1297,11 +1297,12 @@ export default function BrainrotTracker() {
           quantity: item.quantity,
           maxCap: fMaxCap,
         };
-        // Check for existing duplicate in tracker
+        // Check for existing duplicate in tracker (must match msValue too)
         const dupIdx = result.findIndex((e) =>
           e.petName === entry.petName &&
           e.account === entry.account &&
           e.msType === entry.msType &&
+          e.msValue === entry.msValue &&
           e.mutation === entry.mutation
         );
         if (dupIdx >= 0) {
