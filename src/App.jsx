@@ -1072,7 +1072,23 @@ const QtyControl = ({ qty, onMinus, onPlus, color }) => (
 
 export default function BrainrotTracker() {
   // ── Core ──
-  const [games, setGames] = useState(DEFAULT_GAMES);
+  const [games, setGames] = useState(() => {
+    try {
+      const saved = localStorage.getItem("bt_games");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Merge: keep saved pets/mutations but preserve other DEFAULT_GAMES structure
+        const merged = { ...DEFAULT_GAMES };
+        for (const gid of Object.keys(merged)) {
+          if (parsed[gid]) {
+            merged[gid] = { ...merged[gid], pets: parsed[gid].pets || merged[gid].pets, mutations: parsed[gid].mutations || merged[gid].mutations };
+          }
+        }
+        return merged;
+      }
+    } catch (e) {}
+    return DEFAULT_GAMES;
+  });
   const [selGameId, setSelGameId] = useState("steal_a_brainrot");
   const [tab, setTab] = useState("tracker");
 
@@ -1100,6 +1116,9 @@ export default function BrainrotTracker() {
   useEffect(() => {
     try { localStorage.setItem("bt_accounts", JSON.stringify(allAccounts)); } catch (e) {}
   }, [allAccounts]);
+  useEffect(() => {
+    try { localStorage.setItem("bt_games", JSON.stringify(games)); } catch (e) {}
+  }, [games]);
 
   // ── Add form ──
   const [showForm, setShowForm] = useState(false);
@@ -1133,6 +1152,7 @@ export default function BrainrotTracker() {
   const [npBaseMs, setNpBaseMs] = useState("");
   const [npHighMs, setNpHighMs] = useState("");
   const [nmName, setNmName] = useState("");
+  const [petDbQuery, setPetDbQuery] = useState("");
 
   // ── Derived ──
   const game = games[selGameId];
@@ -2191,6 +2211,56 @@ export default function BrainrotTracker() {
               <div style={{ marginTop: 10, fontSize: 11, color: "#555" }}>
                 {game.pets.length} pets in database — use the pet search when adding brainrots to browse
               </div>
+            </div>
+
+            {/* ── Edit Pet Database ── */}
+            <div style={{ ...card, border: `1px solid ${game.color}20` }}>
+              <h3 style={{ margin: "0 0 14px", color: game.color, fontSize: 15 }}>📝 Edit Pet Database</h3>
+              <input type="text" value={petDbQuery} onChange={(e) => setPetDbQuery(e.target.value)}
+                placeholder="🔍 Search pet to edit base M/s…" style={{ ...inp(), marginBottom: 10 }} />
+              {petDbQuery.length >= 2 && (() => {
+                const lo = petDbQuery.toLowerCase();
+                const matches = game.pets.filter((p) => p.name.toLowerCase().includes(lo)).slice(0, 20);
+                return matches.length > 0 ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    {matches.map((pet) => (
+                      <div key={pet.name} style={{
+                        padding: "8px 12px", borderRadius: 8, background: "#0a0a1a",
+                        border: "1px solid #1e1e30",
+                      }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+                          <span style={{ fontWeight: 600, fontSize: 13, color: "#e0e0e0", flex: 1, minWidth: 0 }}>{pet.name}</span>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                            <span style={{ fontSize: 10, color: "#888" }}>Base:</span>
+                            <input type="number" min={0} step="any"
+                              defaultValue={fmtNum(pet.baseMs)}
+                              key={pet.name + "-base-" + pet.baseMs}
+                              onBlur={(ev) => {
+                                const raw = parseFloat(ev.target.value) || 0;
+                                const suf = fmtSuffix(pet.baseMs);
+                                const mult = suf === "B" ? 1e9 : suf === "M" ? 1e6 : suf === "K" ? 1e3 : 1;
+                                const newBase = raw * mult;
+                                if (newBase === pet.baseMs) return;
+                                setGames((p) => {
+                                  const g = { ...p[selGameId] };
+                                  g.pets = g.pets.map((x) => x.name === pet.name ? { ...x, baseMs: newBase } : x);
+                                  return { ...p, [selGameId]: g };
+                                });
+                              }}
+                              style={{ ...inp(), width: 70, padding: "4px 8px", fontSize: 12, textAlign: "center" }} />
+                            <span style={{ fontSize: 11, color: "#888", fontWeight: 700 }}>{fmtSuffix(pet.baseMs)}/s</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ padding: 10, textAlign: "center", color: "#555", fontSize: 12 }}>No pets matching "{petDbQuery}"</div>
+                );
+              })()}
+              {petDbQuery.length < 2 && (
+                <div style={{ fontSize: 11, color: "#555", textAlign: "center" }}>Type at least 2 characters to search</div>
+              )}
             </div>
 
             {/* ── Add Mutation ── */}
