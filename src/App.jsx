@@ -349,6 +349,11 @@ const DEFAULT_GAMES = {
       { name: "Sammyni Fattini", baseMs: 70000000, highMs: 0 },
       { name: "Secret Lucky Block", baseMs: 1, highMs: 0 },
       { name: "W or L", baseMs: 37500000, highMs: 0 },
+      { name: "Celestial Pegasus", baseMs: 1, highMs: 0 },
+      { name: "La Food Combinasion", baseMs: 1, highMs: 0 },
+      { name: "La Romantic Grande", baseMs: 500000000, highMs: 0 },
+      { name: "Rosey and Teddy", baseMs: 1, highMs: 0 },
+      { name: "Ketupat Bros", baseMs: 1, highMs: 0 },
     ],
   },
   escape_tsunami: {
@@ -1119,6 +1124,12 @@ export default function BrainrotTracker() {
   useEffect(() => {
     try { localStorage.setItem("bt_games", JSON.stringify(games)); } catch (e) {}
   }, [games]);
+  useEffect(() => {
+    try { localStorage.setItem("bt_watched", JSON.stringify(watchedPets)); } catch (e) {}
+  }, [watchedPets]);
+  useEffect(() => {
+    try { localStorage.setItem("bt_alert_threshold", JSON.stringify(alertThreshold)); } catch (e) {}
+  }, [alertThreshold]);
 
   // ── Add form ──
   const [showForm, setShowForm] = useState(false);
@@ -1153,6 +1164,24 @@ export default function BrainrotTracker() {
   const [npHighMs, setNpHighMs] = useState("");
   const [nmName, setNmName] = useState("");
   const [petDbQuery, setPetDbQuery] = useState("");
+
+  // ── Stock Alerts ──
+  const DEFAULT_WATCHED = ["Burrito Bandito","Quesadilla Crocodila","Los Nooo My Hotspotsitos","Santa Hotspot","Naughty Naughty","Graipuss Medussi","Swag Soda","Los Bros","Los Burritos","Spaghetti Tualetti","Esok Sekolah","Guerriro Digitale","Los Tacoritas","Los Combinasionas","Bacuru and Egguru","W or L","Los Spaghettis","La Secret Combinasion","Chicleteteirina Bicicleteirina","Los Mobilis","Ketchuru And Musturu","Ketupat Kepat","Chillin Chili","Nuclearo Dinossauro","La Extinct Grande","Chicleteira Cupideira","Gobblino Uniciclino","Los Candies","Eviledon","Money Money Puggy","Tralaledon","Los Chicleteiras","Chicleteira Bicicleteira","Los Tungtungtungcitos","Nooo My Hotspot","La Vacca Saturno Saturnita","Mi Gatito","Noo my Heart","Lovin Rose","Lavadorito Spinito","Los Bros","Chimnino","Orcaledon","Tang Tang Keletang","La Spooky Grande","Los 67","Tictac Sahur","Las Sis","Tacorita Bicicleta","Celestial Pegasus","Sammyni Fattini","La Food Combinasion","Dragon Cannelloni","Cerberus","Hydra Dragon Cannelloni","Rosey and Teddy","Ketupat Bros","La Romantic Grande","Rosetti Tualetti","Cupid Hotspot","Spinny Hammy","Los Mi Gatitos","Popcuru and Fizzuru","Money Money Reindeer","Reinito Sleighito","Capitano Moby","Los 25","La Ginger Sekolah","Cooki and Milki","Chicleteira Noelteira","La Jolly Grande","Burguro And Fryuro","Fragrama and Chocrama","Los Puggies","La Taco Combinasion","La Casa Boo","Los Spooky Combinasionas","Chipso and Queso","Mieteteira Bicicleteira","Spooky and Pumpky","Los Primos","Las Vaquitas Saturnitas","Garama and Madundung","Mariachi Corazoni"];
+  const [watchedPets, setWatchedPets] = useState(() => {
+    try {
+      const saved = localStorage.getItem("bt_watched");
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return { steal_a_brainrot: [...new Set(DEFAULT_WATCHED)] };
+  });
+  const [alertPetQuery, setAlertPetQuery] = useState("");
+  const [alertThreshold, setAlertThreshold] = useState(() => {
+    try {
+      const saved = localStorage.getItem("bt_alert_threshold");
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return 0; // 0 = out of stock only
+  });
 
   // ── Derived ──
   const game = games[selGameId];
@@ -1444,6 +1473,7 @@ export default function BrainrotTracker() {
   const tabs = [
     { key: "tracker", label: "Tracker", icon: "📋" },
     { key: "search", label: "Search", icon: "🔍" },
+    { key: "alerts", label: "Alerts", icon: "🔔" },
     { key: "manage", label: "Manage", icon: "⚙️" },
   ];
 
@@ -2167,6 +2197,159 @@ export default function BrainrotTracker() {
             )}
             </>
             );
+            })()}
+          </div>
+        )}
+
+        {/* ═══════════════════════════════════
+             TAB: ALERTS
+           ═══════════════════════════════════ */}
+        {tab === "alerts" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
+            {/* ── Alert Settings ── */}
+            <div style={{ ...card, border: `1px solid #e67e2220` }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+                <h3 style={{ margin: 0, color: "#e67e22", fontSize: 15 }}>🔔 Stock Alerts</h3>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: 11, color: "#888" }}>Alert when stock ≤</span>
+                  <input type="number" min={0} value={alertThreshold}
+                    onChange={(e) => setAlertThreshold(Math.max(0, parseInt(e.target.value) || 0))}
+                    style={{ ...inp(), width: 55, padding: "4px 8px", fontSize: 12, textAlign: "center" }} />
+                </div>
+              </div>
+
+              {/* Add pets to watch */}
+              <div style={{ marginBottom: 14 }}>
+                <label style={lbl}>Add Pet to Watch List</label>
+                <input type="text" value={alertPetQuery} onChange={(e) => setAlertPetQuery(e.target.value)}
+                  placeholder="🔍 Search pet to watch…" style={{ ...inp(), marginBottom: 6 }} />
+                {alertPetQuery.length >= 2 && (() => {
+                  const lo = alertPetQuery.toLowerCase();
+                  const currentWatched = watchedPets[selGameId] || [];
+                  const matches = game.pets
+                    .filter((p) => p.name.toLowerCase().includes(lo) && !currentWatched.includes(p.name))
+                    .slice(0, 10);
+                  return matches.length > 0 ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                      {matches.map((pet) => (
+                        <button key={pet.name} onClick={() => {
+                          setWatchedPets((p) => ({
+                            ...p, [selGameId]: [...(p[selGameId] || []), pet.name],
+                          }));
+                          setAlertPetQuery("");
+                        }} style={{
+                          padding: "8px 12px", borderRadius: 8, border: "none",
+                          background: "#12121f", color: "#e0e0e0", cursor: "pointer",
+                          fontSize: 12, textAlign: "left", display: "flex", justifyContent: "space-between",
+                        }}>
+                          <span>{pet.name}</span>
+                          <span style={{ color: "#27ae60", fontSize: 11 }}>+ Watch</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 11, color: "#555", textAlign: "center", padding: 6 }}>
+                      {currentWatched.length > 0 ? "No more matching pets to add" : "No matching pets found"}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Watched pets count */}
+              <div style={{ fontSize: 11, color: "#555" }}>
+                Watching {(watchedPets[selGameId] || []).length} pet{(watchedPets[selGameId] || []).length !== 1 ? "s" : ""}
+              </div>
+            </div>
+
+            {/* ── Active Alerts ── */}
+            {(() => {
+              const currentWatched = watchedPets[selGameId] || [];
+              if (currentWatched.length === 0) return (
+                <div style={{ ...card, textAlign: "center", padding: 40, color: "#555" }}>
+                  <div style={{ fontSize: 36, marginBottom: 10 }}>🔕</div>
+                  <p style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>No pets being watched</p>
+                  <p style={{ margin: "6px 0 0", fontSize: 12 }}>Search and add pets above to start receiving stock alerts.</p>
+                </div>
+              );
+
+              // Calculate stock per watched pet
+              const alertItems = currentWatched.map((petName) => {
+                const totalStock = entries
+                  .filter((e) => e.petName === petName)
+                  .reduce((s, e) => s + e.quantity, 0);
+                const isAlert = totalStock <= alertThreshold;
+                return { petName, totalStock, isAlert };
+              });
+
+              const triggered = alertItems.filter((a) => a.isAlert);
+              const ok = alertItems.filter((a) => !a.isAlert);
+
+              return (
+                <>
+                  {/* Triggered alerts */}
+                  {triggered.length > 0 && (
+                    <div style={{ ...card, border: "1px solid #e74c3c30", background: "#0f0a0a" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                        <span style={{ fontSize: 16 }}>🚨</span>
+                        <span style={{ fontWeight: 700, fontSize: 14, color: "#e74c3c" }}>
+                          Restock Needed ({triggered.length})
+                        </span>
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        {triggered.map(({ petName, totalStock }) => (
+                          <div key={petName} style={{
+                            padding: "10px 12px", borderRadius: 8, background: "#1a0a0a",
+                            border: "1px solid #e74c3c20",
+                            display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6,
+                          }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
+                              <span style={{ fontSize: 14 }}>{totalStock === 0 ? "🔴" : "🟡"}</span>
+                              <span style={{ fontWeight: 600, fontSize: 13, color: "#e0e0e0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{petName}</span>
+                            </div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                              <span style={{ fontSize: 13, fontWeight: 800, color: totalStock === 0 ? "#e74c3c" : "#f39c12" }}>{totalStock}</span>
+                              <span style={{ fontSize: 10, color: "#888" }}>in stock</span>
+                              <button onClick={() => setWatchedPets((p) => ({
+                                ...p, [selGameId]: (p[selGameId] || []).filter((n) => n !== petName),
+                              }))} style={{ padding: "2px 6px", borderRadius: 4, border: "none", background: "#e74c3c12", color: "#e74c3c", cursor: "pointer", fontSize: 9 }}>✕</button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* OK items */}
+                  {ok.length > 0 && (
+                    <div style={{ ...card, border: "1px solid #27ae6020" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                        <span style={{ fontSize: 16 }}>✅</span>
+                        <span style={{ fontWeight: 700, fontSize: 14, color: "#27ae60" }}>
+                          In Stock ({ok.length})
+                        </span>
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        {ok.map(({ petName, totalStock }) => (
+                          <div key={petName} style={{
+                            padding: "8px 12px", borderRadius: 8, background: "#0a0a1a",
+                            display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6,
+                          }}>
+                            <span style={{ fontWeight: 600, fontSize: 12, color: "#ccc", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{petName}</span>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                              <span style={{ fontSize: 13, fontWeight: 700, color: "#27ae60" }}>{totalStock}</span>
+                              <span style={{ fontSize: 10, color: "#888" }}>in stock</span>
+                              <button onClick={() => setWatchedPets((p) => ({
+                                ...p, [selGameId]: (p[selGameId] || []).filter((n) => n !== petName),
+                              }))} style={{ padding: "2px 6px", borderRadius: 4, border: "none", background: "#e74c3c12", color: "#e74c3c", cursor: "pointer", fontSize: 9 }}>✕</button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
             })()}
           </div>
         )}
