@@ -402,6 +402,8 @@ const fmt = (n) => {
 
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
+const DEFAULT_WATCHED = ["Burrito Bandito","Quesadilla Crocodila","Los Nooo My Hotspotsitos","Santa Hotspot","Naughty Naughty","Graipuss Medussi","Swag Soda","Los Bros","Los Burritos","Spaghetti Tualetti","Esok Sekolah","Guerriro Digitale","Los Tacoritas","Los Combinasionas","Bacuru and Egguru","W or L","Los Spaghettis","La Secret Combinasion","Chicleteteirina Bicicleteirina","Los Mobilis","Ketchuru And Musturu","Ketupat Kepat","Chillin Chili","Nuclearo Dinossauro","La Extinct Grande","Chicleteira Cupideira","Gobblino Uniciclino","Los Candies","Eviledon","Money Money Puggy","Tralaledon","Los Chicleteiras","Chicleteira Bicicleteira","Los Tungtungtungcitos","Nooo My Hotspot","La Vacca Saturno Saturnita","Mi Gatito","Noo my Heart","Lovin Rose","Lavadorito Spinito","Chimnino","Orcaledon","Tang Tang Keletang","La Spooky Grande","Los 67","Tictac Sahur","Las Sis","Tacorita Bicicleta","Celestial Pegasus","Sammyni Fattini","La Food Combinasion","Dragon Cannelloni","Cerberus","Hydra Dragon Cannelloni","Rosey and Teddy","Ketupat Bros","La Romantic Grande","Rosetti Tualetti","Cupid Hotspot","Spinny Hammy","Los Mi Gatitos","Popcuru and Fizzuru","Money Money Reindeer","Reinito Sleighito","Capitano Moby","Los 25","La Ginger Sekolah","Cooki and Milki","Chicleteira Noelteira","La Jolly Grande","Burguro And Fryuro","Fragrama and Chocrama","Los Puggies","La Taco Combinasion","La Casa Boo","Los Spooky Combinasionas","Chipso and Queso","Mieteteira Bicicleteira","Spooky and Pumpky","Los Primos","Las Vaquitas Saturnitas","Garama and Madundung","Mariachi Corazoni"];
+
 // ═══════════════════════════════════════════════════════════════════
 // PRELOADED IMPORT DATA (migrated from old tracker — 495 entries, 202 accounts)
 // ═══════════════════════════════════════════════════════════════════
@@ -1082,16 +1084,30 @@ export default function BrainrotTracker() {
       const saved = localStorage.getItem("bt_games");
       if (saved) {
         const parsed = JSON.parse(saved);
-        // Merge: keep saved pets/mutations but preserve other DEFAULT_GAMES structure
-        const merged = { ...DEFAULT_GAMES };
-        for (const gid of Object.keys(merged)) {
-          if (parsed[gid]) {
-            merged[gid] = { ...merged[gid], pets: parsed[gid].pets || merged[gid].pets, mutations: parsed[gid].mutations || merged[gid].mutations };
+        const merged = {};
+        for (const gid of Object.keys(DEFAULT_GAMES)) {
+          const def = DEFAULT_GAMES[gid];
+          const sv = parsed[gid];
+          if (sv && sv.pets && Array.isArray(sv.pets)) {
+            // Merge: use saved pets but add any NEW default pets not in saved
+            const savedNames = new Set(sv.pets.map((p) => p.name));
+            const newPets = def.pets.filter((p) => !savedNames.has(p.name));
+            const allPets = [...sv.pets, ...newPets];
+            // Merge mutations similarly
+            const savedMuts = new Set(sv.mutations || []);
+            const allMuts = [...(sv.mutations || def.mutations)];
+            (def.mutations || []).forEach((m) => { if (!savedMuts.has(m)) allMuts.push(m); });
+            merged[gid] = { ...def, pets: allPets, mutations: allMuts };
+          } else {
+            merged[gid] = def;
           }
         }
         return merged;
       }
-    } catch (e) {}
+    } catch (e) {
+      // If localStorage is corrupted, clear it and use defaults
+      try { localStorage.removeItem("bt_games"); } catch (x) {}
+    }
     return DEFAULT_GAMES;
   });
   const [selGameId, setSelGameId] = useState("steal_a_brainrot");
@@ -1124,12 +1140,6 @@ export default function BrainrotTracker() {
   useEffect(() => {
     try { localStorage.setItem("bt_games", JSON.stringify(games)); } catch (e) {}
   }, [games]);
-  useEffect(() => {
-    try { localStorage.setItem("bt_watched", JSON.stringify(watchedPets)); } catch (e) {}
-  }, [watchedPets]);
-  useEffect(() => {
-    try { localStorage.setItem("bt_alert_threshold", JSON.stringify(alertThreshold)); } catch (e) {}
-  }, [alertThreshold]);
 
   // ── Add form ──
   const [showForm, setShowForm] = useState(false);
@@ -1166,7 +1176,6 @@ export default function BrainrotTracker() {
   const [petDbQuery, setPetDbQuery] = useState("");
 
   // ── Stock Alerts ──
-  const DEFAULT_WATCHED = ["Burrito Bandito","Quesadilla Crocodila","Los Nooo My Hotspotsitos","Santa Hotspot","Naughty Naughty","Graipuss Medussi","Swag Soda","Los Bros","Los Burritos","Spaghetti Tualetti","Esok Sekolah","Guerriro Digitale","Los Tacoritas","Los Combinasionas","Bacuru and Egguru","W or L","Los Spaghettis","La Secret Combinasion","Chicleteteirina Bicicleteirina","Los Mobilis","Ketchuru And Musturu","Ketupat Kepat","Chillin Chili","Nuclearo Dinossauro","La Extinct Grande","Chicleteira Cupideira","Gobblino Uniciclino","Los Candies","Eviledon","Money Money Puggy","Tralaledon","Los Chicleteiras","Chicleteira Bicicleteira","Los Tungtungtungcitos","Nooo My Hotspot","La Vacca Saturno Saturnita","Mi Gatito","Noo my Heart","Lovin Rose","Lavadorito Spinito","Los Bros","Chimnino","Orcaledon","Tang Tang Keletang","La Spooky Grande","Los 67","Tictac Sahur","Las Sis","Tacorita Bicicleta","Celestial Pegasus","Sammyni Fattini","La Food Combinasion","Dragon Cannelloni","Cerberus","Hydra Dragon Cannelloni","Rosey and Teddy","Ketupat Bros","La Romantic Grande","Rosetti Tualetti","Cupid Hotspot","Spinny Hammy","Los Mi Gatitos","Popcuru and Fizzuru","Money Money Reindeer","Reinito Sleighito","Capitano Moby","Los 25","La Ginger Sekolah","Cooki and Milki","Chicleteira Noelteira","La Jolly Grande","Burguro And Fryuro","Fragrama and Chocrama","Los Puggies","La Taco Combinasion","La Casa Boo","Los Spooky Combinasionas","Chipso and Queso","Mieteteira Bicicleteira","Spooky and Pumpky","Los Primos","Las Vaquitas Saturnitas","Garama and Madundung","Mariachi Corazoni"];
   const [watchedPets, setWatchedPets] = useState(() => {
     try {
       const saved = localStorage.getItem("bt_watched");
@@ -1182,6 +1191,12 @@ export default function BrainrotTracker() {
     } catch (e) {}
     return 0; // 0 = out of stock only
   });
+  useEffect(() => {
+    try { localStorage.setItem("bt_watched", JSON.stringify(watchedPets)); } catch (e) {}
+  }, [watchedPets]);
+  useEffect(() => {
+    try { localStorage.setItem("bt_alert_threshold", JSON.stringify(alertThreshold)); } catch (e) {}
+  }, [alertThreshold]);
 
   // ── Derived ──
   const game = games[selGameId];
