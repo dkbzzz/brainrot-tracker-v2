@@ -1129,9 +1129,9 @@ const QtyControl = ({ qty, onMinus, onPlus, color }) => (
 // ═══════════════════════════════════════════════════════════════════
 
 export default function BrainrotTracker() {
-  // ── Sync flags to prevent writing back data we just received from Firebase ──
-  const fbSyncRef = useRef({ entries: false, accounts: false, games: false, watched: false, threshold: false });
-  const [fbReady, setFbReady] = useState(false);
+  // ── Firebase sync: use version counter to prevent write-back loops ──
+  const writeCountRef = useRef({ entries: 0, accounts: 0, games: 0, watched: 0, threshold: 0 });
+  const initialLoadRef = useRef(true);
 
   // ── Core ──
   const [games, setGames] = useState(DEFAULT_GAMES);
@@ -1148,77 +1148,98 @@ export default function BrainrotTracker() {
   const [alertPetQuery, setAlertPetQuery] = useState("");
   const [alertThreshold, setAlertThreshold] = useState(0);
 
-  // ═══ FIREBASE: Listen for real-time changes (runs once on mount) ═══
+  // Helper: fix Firebase converting arrays to objects (fills gaps with null)
+  const fixArrays = (obj) => {
+    if (!obj || typeof obj !== "object") return obj;
+    if (Array.isArray(obj)) return obj.filter(Boolean).map(fixArrays);
+    const result = {};
+    for (const [k, v] of Object.entries(obj)) {
+      if (v && typeof v === "object" && !Array.isArray(v) && Object.keys(v).every((key) => /^\d+$/.test(key))) {
+        // Firebase converted array to object — convert back
+        const maxIdx = Math.max(...Object.keys(v).map(Number));
+        const arr = [];
+        for (let i = 0; i <= maxIdx; i++) arr.push(v[String(i)] || null);
+        result[k] = arr.filter(Boolean).map(fixArrays);
+      } else {
+        result[k] = fixArrays(v);
+      }
+    }
+    return result;
+  };
+
+  // Helper: write to Firebase and increment counter to skip next onValue
+  const fbSave = (path, data, counterKey) => {
+    writeCountRef.current[counterKey]++;
+    fbWrite(path, data);
+  };
+
+  // ═══ FIREBASE: Listen for real-time changes ═══
   useEffect(() => {
-    // Listen: entries
     onValue(ref(db, "entries"), (snap) => {
+      if (writeCountRef.current.entries > 0) { writeCountRef.current.entries--; return; }
       const val = snap.val();
-      if (val) { fbSyncRef.current.entries = true; setAllEntries(val); }
+      if (val) setAllEntries(fixArrays(val));
     });
-    // Listen: accounts
     onValue(ref(db, "accounts"), (snap) => {
+      if (writeCountRef.current.accounts > 0) { writeCountRef.current.accounts--; return; }
       const val = snap.val();
-      if (val) { fbSyncRef.current.accounts = true; setAllAccounts(val); }
+      if (val) setAllAccounts(fixArrays(val));
     });
-    // Listen: games (pets + mutations)
     onValue(ref(db, "games"), (snap) => {
+      if (writeCountRef.current.games > 0) { writeCountRef.current.games--; return; }
       const val = snap.val();
       if (val) {
-        // Merge with defaults to ensure structure is complete
+        const fixed = fixArrays(val);
         const merged = {};
         for (const gid of Object.keys(DEFAULT_GAMES)) {
           const def = DEFAULT_GAMES[gid];
-          const sv = val[gid];
+          const sv = fixed[gid];
           if (sv && sv.pets && Array.isArray(sv.pets)) {
             const savedNames = new Set(sv.pets.map((p) => p.name));
             const newPets = def.pets.filter((p) => !savedNames.has(p.name));
-            const allPets = [...sv.pets, ...newPets];
-            const savedMuts = new Set(sv.mutations || []);
-            const allMuts = [...(sv.mutations || def.mutations)];
-            (def.mutations || []).forEach((m) => { if (!savedMuts.has(m)) allMuts.push(m); });
-            merged[gid] = { ...def, pets: allPets, mutations: allMuts };
+            merged[gid] = { ...def, pets: [...sv.pets, ...newPets], mutations: sv.mutations || def.mutations };
           } else {
             merged[gid] = def;
           }
         }
-        fbSyncRef.current.games = true;
         setGames(merged);
       }
     });
-    // Listen: watched pets
     onValue(ref(db, "watchedPets"), (snap) => {
+      if (writeCountRef.current.watched > 0) { writeCountRef.current.watched--; return; }
       const val = snap.val();
-      if (val) { fbSyncRef.current.watched = true; setWatchedPets(val); }
+      if (val) setWatchedPets(fixArrays(val));
     });
-    // Listen: alert threshold
     onValue(ref(db, "alertThreshold"), (snap) => {
+      if (writeCountRef.current.threshold > 0) { writeCountRef.current.threshold--; return; }
       const val = snap.val();
-      if (val !== null && val !== undefined) { fbSyncRef.current.threshold = true; setAlertThreshold(val); }
+      if (val !== null && val !== undefined) setAlertThreshold(val);
     });
-    setFbReady(true);
+    // After first load, mark initial load complete
+    setTimeout(() => { initialLoadRef.current = false; }, 2000);
   }, []);
 
-  // ═══ FIREBASE: Write changes back (skip if change came from Firebase listener) ═══
+  // ═══ FIREBASE: Write changes to database ═══
   useEffect(() => {
-    if (fbSyncRef.current.entries) { fbSyncRef.current.entries = false; return; }
-    if (fbReady) fbWrite("entries", allEntries);
-  }, [allEntries, fbReady]);
+    if (initialLoadRef.current) return;
+    fbSave("entries", allEntries, "entries");
+  }, [allEntries]);
   useEffect(() => {
-    if (fbSyncRef.current.accounts) { fbSyncRef.current.accounts = false; return; }
-    if (fbReady) fbWrite("accounts", allAccounts);
-  }, [allAccounts, fbReady]);
+    if (initialLoadRef.current) return;
+    fbSave("accounts", allAccounts, "accounts");
+  }, [allAccounts]);
   useEffect(() => {
-    if (fbSyncRef.current.games) { fbSyncRef.current.games = false; return; }
-    if (fbReady) fbWrite("games", games);
-  }, [games, fbReady]);
+    if (initialLoadRef.current) return;
+    fbSave("games", games, "games");
+  }, [games]);
   useEffect(() => {
-    if (fbSyncRef.current.watched) { fbSyncRef.current.watched = false; return; }
-    if (fbReady) fbWrite("watchedPets", watchedPets);
-  }, [watchedPets, fbReady]);
+    if (initialLoadRef.current) return;
+    fbSave("watchedPets", watchedPets, "watched");
+  }, [watchedPets]);
   useEffect(() => {
-    if (fbSyncRef.current.threshold) { fbSyncRef.current.threshold = false; return; }
-    if (fbReady) fbWrite("alertThreshold", alertThreshold);
-  }, [alertThreshold, fbReady]);
+    if (initialLoadRef.current) return;
+    fbSave("alertThreshold", alertThreshold, "threshold");
+  }, [alertThreshold]);
 
   // ── Add form ──
   const [showForm, setShowForm] = useState(false);
