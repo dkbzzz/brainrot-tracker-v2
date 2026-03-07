@@ -376,6 +376,7 @@ const DEFAULT_GAMES = {
       { name: "La Romantic Grande", baseMs: 500000000, highMs: 0 },
       { name: "Rosey and Teddy", baseMs: 1, highMs: 0 },
       { name: "Ketupat Bros", baseMs: 1, highMs: 0 },
+      { name: "Meowl", baseMs: 600, highMs: 0 },
     ],
   },
   escape_tsunami: {
@@ -424,7 +425,7 @@ const fmt = (n) => {
 
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
-const DEFAULT_WATCHED = ["Burrito Bandito","Quesadilla Crocodila","Los Nooo My Hotspotsitos","Santa Hotspot","Naughty Naughty","Graipuss Medussi","Swag Soda","Los Bros","Los Burritos","Spaghetti Tualetti","Esok Sekolah","Guerriro Digitale","Los Tacoritas","Los Combinasionas","Bacuru and Egguru","W or L","Los Spaghettis","La Secret Combinasion","Chicleteteirina Bicicleteirina","Los Mobilis","Ketchuru And Musturu","Ketupat Kepat","Chillin Chili","Nuclearo Dinossauro","La Extinct Grande","Chicleteira Cupideira","Gobblino Uniciclino","Los Candies","Eviledon","Money Money Puggy","Tralaledon","Los Chicleteiras","Chicleteira Bicicleteira","Los Tungtungtungcitos","Nooo My Hotspot","La Vacca Saturno Saturnita","Mi Gatito","Noo my Heart","Lovin Rose","Lavadorito Spinito","Chimnino","Orcaledon","Tang Tang Keletang","La Spooky Grande","Los 67","Tictac Sahur","Las Sis","Tacorita Bicicleta","Celestial Pegasus","Sammyni Fattini","La Food Combinasion","Dragon Cannelloni","Cerberus","Hydra Dragon Cannelloni","Rosey and Teddy","Ketupat Bros","La Romantic Grande","Rosetti Tualetti","Cupid Hotspot","Spinny Hammy","Los Mi Gatitos","Popcuru and Fizzuru","Money Money Reindeer","Reinito Sleighito","Capitano Moby","Los 25","La Ginger Sekolah","Cooki and Milki","Chicleteira Noelteira","La Jolly Grande","Burguro And Fryuro","Fragrama and Chocrama","Los Puggies","La Taco Combinasion","La Casa Boo","Los Spooky Combinasionas","Chipso and Queso","Mieteteira Bicicleteira","Spooky and Pumpky","Los Primos","Las Vaquitas Saturnitas","Garama and Madundung","Mariachi Corazoni"];
+const DEFAULT_WATCHED = ["Burrito Bandito","Quesadilla Crocodila","Los Nooo My Hotspotsitos","Santa Hotspot","Naughty Naughty","Graipuss Medussi","Los Bros","Los Burritos","Spaghetti Tualetti","Esok Sekolah","Guerriro Digitale","Los Tacoritas","Los Combinasionas","Bacuru and Egguru","W or L","Los Spaghettis","La Secret Combinasion","Chicleteteirina Bicicleteirina","Los Mobilis","Ketchuru And Musturu","Ketupat Kepat","Chillin Chili","Nuclearo Dinossauro","La Extinct Grande","Chicleteira Cupideira","Gobblino Uniciclino","Los Candies","Eviledon","Money Money Puggy","Tralaledon","Los Chicleteiras","Chicleteira Bicicleteira","Los Tungtungtungcitos","Nooo My Hotspot","La Vacca Saturno Saturnita","Mi Gatito","Noo my Heart","Lovin Rose","Lavadorito Spinito","Chimnino","Orcaledon","Tang Tang Keletang","La Spooky Grande","Los 67","Tictac Sahur","Las Sis","Tacorita Bicicleta","Celestial Pegasus","Sammyni Fattini","Dragon Cannelloni","Hydra Dragon Cannelloni","Rosetti Tualetti","Cupid Hotspot","Spinny Hammy","Los Mi Gatitos","Popcuru and Fizzuru","Money Money Reindeer","Reinito Sleighito","Capitano Moby","Los 25","La Ginger Sekolah","Cooki and Milki","Chicleteira Noelteira","La Jolly Grande","Burguro And Fryuro","Fragrama and Chocrama","Los Puggies","La Taco Combinasion","La Casa Boo","Chipso and Queso","Mieteteira Bicicleteira","Spooky and Pumpky","Los Primos","Las Vaquitas Saturnitas","Garama and Madundung","Mariachi Corazoni"];
 
 // ═══════════════════════════════════════════════════════════════════
 // PRELOADED IMPORT DATA (migrated from old tracker — 495 entries, 202 accounts)
@@ -929,6 +930,34 @@ const IMPORT_DATA = (() => {
   add("Lucky Block","mixpets0016","High",750000000,"Gold",5,10);
   add("Lucky Block","mixpets0016","Base",50000000,"Diamond",1,10);
   add("Festive Lucky Block","mixpets0016","High",400,"None",4,10);
+  add("Lucky Block","mixpets0017","Base",50000000,"Diamond",5,10);
+  add("Bacuru and Egguru","mixpets0018","Base",24000000,"None",2,10);
+  add("Los Puggies","mixpets0018","Base",30000000,"None",1,10);
+  add("Eviledon","mixpets0018","Base",31500000,"None",2,10);
+  add("Eviledon","mixpets0018","High",189000000,"None",2,10);
+  add("Tictac Sahur","mixpets0017","High",225000000,"None",1,10);
+  add("Tictac Sahur","mixpets0017","High",281200000,"None",1,10);
+  add("Bacuru and Egguru","mixpets0018","High",204000000,"None",1,10);
+  add("Bacuru and Egguru","mixpets0018","High",216000000,"None",1,10);
+  add("Ketchuru And Musturu","mixpets0014","Base",42500000,"None",2,10);
+  add("Ketchuru And Musturu","mixpets0014","High",255000000,"None",1,10);
+  add("Lavadorito Spinito","mixpets0014","Base",45000000,"None",2,10);
+  add("Garama and Madundung","mixpets0014","Base",50000000,"None",2,10);
+  add("Burguro And Fryuro","mixpets0014","Base",150000000,"None",1,10);
+  add("La Secret Combinasion","mixpets0019","Base",125000000,"None",1,10);
+  add("La Secret Combinasion","mixpets0019","High",375000000,"None",1,10);
+  add("La Secret Combinasion","mixpets0019","High",875000000,"None",1,10);
+  add("Lovin Rose","mixpets0019","High",292500000,"None",1,10);
+  add("Lovin Rose","mixpets0019","Base",32500000,"None",1,10);
+  add("Celestial Pegasus","mixpets0020","High",262.5,"Diamond",1,10);
+  add("Nuclearo Dinossauro","mixpets0020","High",135000000,"None",1,10);
+  add("Tang Tang Keletang","mixpets0020","High",117500000,"Diamond",1,10);
+  add("Esok Sekolah","mixpets0020","High",270000000,"Cursed",1,10);
+  add("Esok Sekolah","mixpets0020","High",180000000,"None",1,10);
+  add("Tang Tang Keletang","mixpets0020","Base",33500000,"None",1,10);
+  add("Money Money Puggy","mixpets0020","High",31500000,"Diamond",1,10);
+  add("Garama and Madundung","mixpets0020","Base",50000000,"None",1,10);
+  add("Garama and Madundung","mixpets0020","High",150000000,"None",2,10);
   return { entries: e, accounts: [...a].sort() };
 })();
 
