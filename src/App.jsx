@@ -1129,10 +1129,6 @@ const QtyControl = ({ qty, onMinus, onPlus, color }) => (
 // ═══════════════════════════════════════════════════════════════════
 
 export default function BrainrotTracker() {
-  // ── Firebase sync: use version counter to prevent write-back loops ──
-  const writeCountRef = useRef({ entries: 0, accounts: 0, games: 0, watched: 0, threshold: 0 });
-  const initialLoadRef = useRef(true);
-
   // ── Core ──
   const [games, setGames] = useState(DEFAULT_GAMES);
   const [selGameId, setSelGameId] = useState("steal_a_brainrot");
@@ -1148,48 +1144,39 @@ export default function BrainrotTracker() {
   const [alertPetQuery, setAlertPetQuery] = useState("");
   const [alertThreshold, setAlertThreshold] = useState(0);
 
-  // Helper: fix Firebase converting arrays to objects (fills gaps with null)
-  const fixArrays = (obj) => {
+  // ═══ FIREBASE SYNC ═══
+  // Track whether we're currently processing a Firebase update to avoid loops
+  const isFromFirebase = useRef(false);
+  const loaded = useRef(false);
+
+  // Helper: fix Firebase converting arrays to indexed objects
+  const fixFb = (obj) => {
     if (!obj || typeof obj !== "object") return obj;
-    if (Array.isArray(obj)) return obj.filter(Boolean).map(fixArrays);
-    const result = {};
-    for (const [k, v] of Object.entries(obj)) {
-      if (v && typeof v === "object" && !Array.isArray(v) && Object.keys(v).every((key) => /^\d+$/.test(key))) {
-        // Firebase converted array to object — convert back
-        const maxIdx = Math.max(...Object.keys(v).map(Number));
-        const arr = [];
-        for (let i = 0; i <= maxIdx; i++) arr.push(v[String(i)] || null);
-        result[k] = arr.filter(Boolean).map(fixArrays);
-      } else {
-        result[k] = fixArrays(v);
-      }
+    if (Array.isArray(obj)) return obj.filter((x) => x != null).map(fixFb);
+    // Check if this object is really an array (all numeric keys)
+    const keys = Object.keys(obj);
+    if (keys.length > 0 && keys.every((k) => /^\d+$/.test(k))) {
+      const arr = [];
+      keys.forEach((k) => { if (obj[k] != null) arr.push(fixFb(obj[k])); });
+      return arr;
     }
-    return result;
+    const out = {};
+    for (const [k, v] of Object.entries(obj)) out[k] = fixFb(v);
+    return out;
   };
 
-  // Helper: write to Firebase and increment counter to skip next onValue
-  const fbSave = (path, data, counterKey) => {
-    writeCountRef.current[counterKey]++;
-    fbWrite(path, data);
-  };
-
-  // ═══ FIREBASE: Listen for real-time changes ═══
+  // Load from Firebase on mount
   useEffect(() => {
-    onValue(ref(db, "entries"), (snap) => {
-      if (writeCountRef.current.entries > 0) { writeCountRef.current.entries--; return; }
+    onValue(ref(db, "/"), (snap) => {
       const val = snap.val();
-      if (val) setAllEntries(fixArrays(val));
-    });
-    onValue(ref(db, "accounts"), (snap) => {
-      if (writeCountRef.current.accounts > 0) { writeCountRef.current.accounts--; return; }
-      const val = snap.val();
-      if (val) setAllAccounts(fixArrays(val));
-    });
-    onValue(ref(db, "games"), (snap) => {
-      if (writeCountRef.current.games > 0) { writeCountRef.current.games--; return; }
-      const val = snap.val();
-      if (val) {
-        const fixed = fixArrays(val);
+      if (!val) return;
+      isFromFirebase.current = true;
+      if (val.entries) setAllEntriesFb(fixFb(val.entries));
+      if (val.accounts) setAllAccountsFb(fixFb(val.accounts));
+      if (val.watchedPets) setWatchedPetsFb(fixFb(val.watchedPets));
+      if (val.alertThreshold !== undefined) setAlertThresholdFb(val.alertThreshold);
+      if (val.games) {
+        const fixed = fixFb(val.games);
         const merged = {};
         for (const gid of Object.keys(DEFAULT_GAMES)) {
           const def = DEFAULT_GAMES[gid];
@@ -1202,44 +1189,61 @@ export default function BrainrotTracker() {
             merged[gid] = def;
           }
         }
-        setGames(merged);
+        setGamesFb(merged);
       }
+      loaded.current = true;
+      // Reset flag after React processes the state updates
+      setTimeout(() => { isFromFirebase.current = false; }, 100);
     });
-    onValue(ref(db, "watchedPets"), (snap) => {
-      if (writeCountRef.current.watched > 0) { writeCountRef.current.watched--; return; }
-      const val = snap.val();
-      if (val) setWatchedPets(fixArrays(val));
-    });
-    onValue(ref(db, "alertThreshold"), (snap) => {
-      if (writeCountRef.current.threshold > 0) { writeCountRef.current.threshold--; return; }
-      const val = snap.val();
-      if (val !== null && val !== undefined) setAlertThreshold(val);
-    });
-    // After first load, mark initial load complete
-    setTimeout(() => { initialLoadRef.current = false; }, 2000);
   }, []);
 
-  // ═══ FIREBASE: Write changes to database ═══
-  useEffect(() => {
-    if (initialLoadRef.current) return;
-    fbSave("entries", allEntries, "entries");
-  }, [allEntries]);
-  useEffect(() => {
-    if (initialLoadRef.current) return;
-    fbSave("accounts", allAccounts, "accounts");
-  }, [allAccounts]);
-  useEffect(() => {
-    if (initialLoadRef.current) return;
-    fbSave("games", games, "games");
-  }, [games]);
-  useEffect(() => {
-    if (initialLoadRef.current) return;
-    fbSave("watchedPets", watchedPets, "watched");
-  }, [watchedPets]);
-  useEffect(() => {
-    if (initialLoadRef.current) return;
-    fbSave("alertThreshold", alertThreshold, "threshold");
-  }, [alertThreshold]);
+  // ── Wrapper: update entries AND write to Firebase ──
+  const realSetEntries = setAllEntries;
+  const realSetAccounts = setAllAccounts;
+
+  // Override: every time entries change, also save to Firebase
+  const setAllEntriesFb = (valOrFn) => {
+    if (isFromFirebase.current) { realSetEntries(valOrFn); return; }
+    realSetEntries((prev) => {
+      const next = typeof valOrFn === "function" ? valOrFn(prev) : valOrFn;
+      fbWrite("entries", next);
+      return next;
+    });
+  };
+  const setAllAccountsFb = (valOrFn) => {
+    if (isFromFirebase.current) { realSetAccounts(valOrFn); return; }
+    realSetAccounts((prev) => {
+      const next = typeof valOrFn === "function" ? valOrFn(prev) : valOrFn;
+      fbWrite("accounts", next);
+      return next;
+    });
+  };
+
+  const realSetGames = setGames;
+  const setGamesFb = (valOrFn) => {
+    if (isFromFirebase.current) { realSetGames(valOrFn); return; }
+    realSetGames((prev) => {
+      const next = typeof valOrFn === "function" ? valOrFn(prev) : valOrFn;
+      fbWrite("games", next);
+      return next;
+    });
+  };
+
+  const realSetWatched = setWatchedPets;
+  const setWatchedPetsFb = (valOrFn) => {
+    if (isFromFirebase.current) { realSetWatched(valOrFn); return; }
+    realSetWatched((prev) => {
+      const next = typeof valOrFn === "function" ? valOrFn(prev) : valOrFn;
+      fbWrite("watchedPets", next);
+      return next;
+    });
+  };
+
+  const realSetThreshold = setAlertThreshold;
+  const setAlertThresholdFb = (val) => {
+    realSetThreshold(val);
+    if (!isFromFirebase.current) fbWrite("alertThreshold", val);
+  };
 
   // ── Add form ──
   const [showForm, setShowForm] = useState(false);
@@ -1281,11 +1285,11 @@ export default function BrainrotTracker() {
   const accounts = allAccounts[selGameId] || [];
 
   // ── Helpers ──
-  const upd = (gid, fn) => setAllEntries((p) => ({ ...p, [gid]: fn(p[gid] || []) }));
+  const upd = (gid, fn) => setAllEntriesFb((p) => ({ ...p, [gid]: fn(p[gid] || []) }));
   const addAcct = (gid, n) => {
     const t = n.trim();
     if (!t) return;
-    setAllAccounts((p) => {
+    setAllAccountsFb((p) => {
       const ex = p[gid] || [];
       return ex.includes(t) ? p : { ...p, [gid]: [...ex, t] };
     });
@@ -1298,7 +1302,7 @@ export default function BrainrotTracker() {
     const oldName = accounts[idx];
     if (newName === oldName) { setEditingAcctIdx(null); setEditingAcctValue(""); return; }
     // Rename in accounts list
-    setAllAccounts((p) => {
+    setAllAccountsFb((p) => {
       const list = [...(p[selGameId] || [])];
       list[idx] = newName;
       return { ...p, [selGameId]: list };
@@ -1312,7 +1316,7 @@ export default function BrainrotTracker() {
   // ── Delete account + all its entries ──
   const deleteAccount = (idx) => {
     const name = accounts[idx];
-    setAllAccounts((p) => {
+    setAllAccountsFb((p) => {
       const list = [...(p[selGameId] || [])];
       list.splice(idx, 1);
       return { ...p, [selGameId]: list };
@@ -1508,7 +1512,7 @@ export default function BrainrotTracker() {
   const handleAddPet = () => {
     const n = npName.trim();
     if (!n || !npBaseMs) return;
-    setGames((p) => {
+    setGamesFb((p) => {
       const g = { ...p[selGameId] };
       if (g.pets.some((x) => x.name.toLowerCase() === n.toLowerCase())) return p;
       g.pets = [...g.pets, { name: n, baseMs: parseFloat(npBaseMs) || 0, highMs: parseFloat(npHighMs) || 0 }];
@@ -1520,7 +1524,7 @@ export default function BrainrotTracker() {
   const handleAddMut = () => {
     const n = nmName.trim();
     if (!n) return;
-    setGames((p) => {
+    setGamesFb((p) => {
       const g = { ...p[selGameId] };
       if (g.mutations.some((x) => (typeof x === "string" ? x : x.name).toLowerCase() === n.toLowerCase())) return p;
       g.mutations = [...g.mutations, n];
@@ -1746,7 +1750,7 @@ export default function BrainrotTracker() {
                         const nv = acctModalName.trim();
                         if (!nv || nv === accounts[acctModalIdx]) return;
                         const oldName = accounts[acctModalIdx];
-                        setAllAccounts((p) => { const list = [...(p[selGameId] || [])]; list[acctModalIdx] = nv; return { ...p, [selGameId]: list }; });
+                        setAllAccountsFb((p) => { const list = [...(p[selGameId] || [])]; list[acctModalIdx] = nv; return { ...p, [selGameId]: list }; });
                         upd(selGameId, (prev) => prev.map((e) => e.account === oldName ? { ...e, account: nv } : e));
                       }}
                         style={{ padding: "8px 16px", borderRadius: 8, border: "none", background: "#27ae6020", color: "#27ae60", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>
@@ -2306,7 +2310,7 @@ export default function BrainrotTracker() {
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <span style={{ fontSize: 11, color: "#888" }}>Alert when stock ≤</span>
                   <input type="number" min={0} value={alertThreshold}
-                    onChange={(e) => setAlertThreshold(Math.max(0, parseInt(e.target.value) || 0))}
+                    onChange={(e) => setAlertThresholdFb(Math.max(0, parseInt(e.target.value) || 0))}
                     style={{ ...inp(), width: 55, padding: "4px 8px", fontSize: 12, textAlign: "center" }} />
                 </div>
               </div>
@@ -2326,7 +2330,7 @@ export default function BrainrotTracker() {
                     <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                       {matches.map((pet) => (
                         <button key={pet.name} onClick={() => {
-                          setWatchedPets((p) => ({
+                          setWatchedPetsFb((p) => ({
                             ...p, [selGameId]: [...(p[selGameId] || []), pet.name],
                           }));
                           setAlertPetQuery("");
@@ -2402,7 +2406,7 @@ export default function BrainrotTracker() {
                             <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                               <span style={{ fontSize: 13, fontWeight: 800, color: totalStock === 0 ? "#e74c3c" : "#f39c12" }}>{totalStock}</span>
                               <span style={{ fontSize: 10, color: "#888" }}>in stock</span>
-                              <button onClick={() => setWatchedPets((p) => ({
+                              <button onClick={() => setWatchedPetsFb((p) => ({
                                 ...p, [selGameId]: (p[selGameId] || []).filter((n) => n !== petName),
                               }))} style={{ padding: "2px 6px", borderRadius: 4, border: "none", background: "#e74c3c12", color: "#e74c3c", cursor: "pointer", fontSize: 9 }}>✕</button>
                             </div>
@@ -2431,7 +2435,7 @@ export default function BrainrotTracker() {
                             <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                               <span style={{ fontSize: 13, fontWeight: 700, color: "#27ae60" }}>{totalStock}</span>
                               <span style={{ fontSize: 10, color: "#888" }}>in stock</span>
-                              <button onClick={() => setWatchedPets((p) => ({
+                              <button onClick={() => setWatchedPetsFb((p) => ({
                                 ...p, [selGameId]: (p[selGameId] || []).filter((n) => n !== petName),
                               }))} style={{ padding: "2px 6px", borderRadius: 4, border: "none", background: "#e74c3c12", color: "#e74c3c", cursor: "pointer", fontSize: 9 }}>✕</button>
                             </div>
@@ -2516,7 +2520,7 @@ export default function BrainrotTracker() {
                                 const mult = suf === "B" ? 1e9 : suf === "M" ? 1e6 : suf === "K" ? 1e3 : 1;
                                 const newBase = raw * mult;
                                 if (newBase === pet.baseMs) return;
-                                setGames((p) => {
+                                setGamesFb((p) => {
                                   const g = { ...p[selGameId] };
                                   g.pets = g.pets.map((x) => x.name === pet.name ? { ...x, baseMs: newBase } : x);
                                   return { ...p, [selGameId]: g };
