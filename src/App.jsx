@@ -1,4 +1,26 @@
 import { useState, useEffect, useRef, useMemo } from "react";
+import { initializeApp } from "firebase/app";
+import { getDatabase, ref, set, onValue } from "firebase/database";
+
+// ═══════════════════════════════════════════════════════════════════
+// FIREBASE CONFIG
+// ═══════════════════════════════════════════════════════════════════
+const firebaseConfig = {
+  apiKey: "AIzaSyDo7Zj35rAXqzu3t5qT_YM6jfIz0j4Mmj0",
+  authDomain: "brainrot-tracker-34acd.firebaseapp.com",
+  databaseURL: "https://brainrot-tracker-34acd-default-rtdb.firebaseio.com",
+  projectId: "brainrot-tracker-34acd",
+  storageBucket: "brainrot-tracker-34acd.firebasestorage.app",
+  messagingSenderId: "647265442835",
+  appId: "1:647265442835:web:c8b5e173d01c12f3c0f3e6",
+};
+const fbApp = initializeApp(firebaseConfig);
+const db = getDatabase(fbApp);
+
+// Helper: write to Firebase (debounced)
+const fbWrite = (path, data) => {
+  try { set(ref(db, path), data); } catch (e) { console.error("Firebase write error:", e); }
+};
 
 // ═══════════════════════════════════════════════════════════════════
 // DEFAULT GAME DATA  (no rarity anywhere)
@@ -1078,22 +1100,50 @@ const QtyControl = ({ qty, onMinus, onPlus, color }) => (
 // ═══════════════════════════════════════════════════════════════════
 
 export default function BrainrotTracker() {
+  // ── Sync flags to prevent writing back data we just received from Firebase ──
+  const fbSyncRef = useRef({ entries: false, accounts: false, games: false, watched: false, threshold: false });
+  const [fbReady, setFbReady] = useState(false);
+
   // ── Core ──
-  const [games, setGames] = useState(() => {
-    try {
-      const saved = localStorage.getItem("bt_games");
-      if (saved) {
-        const parsed = JSON.parse(saved);
+  const [games, setGames] = useState(DEFAULT_GAMES);
+  const [selGameId, setSelGameId] = useState("steal_a_brainrot");
+  const [tab, setTab] = useState("tracker");
+
+  // ── Per-game entries ──
+  const [allEntries, setAllEntries] = useState({ steal_a_brainrot: IMPORT_DATA.entries, escape_tsunami: [] });
+  // ── Per-game accounts ──
+  const [allAccounts, setAllAccounts] = useState({ steal_a_brainrot: IMPORT_DATA.accounts, escape_tsunami: [] });
+
+  // ── Stock Alerts ──
+  const [watchedPets, setWatchedPets] = useState({ steal_a_brainrot: [...new Set(DEFAULT_WATCHED)] });
+  const [alertPetQuery, setAlertPetQuery] = useState("");
+  const [alertThreshold, setAlertThreshold] = useState(0);
+
+  // ═══ FIREBASE: Listen for real-time changes (runs once on mount) ═══
+  useEffect(() => {
+    // Listen: entries
+    onValue(ref(db, "entries"), (snap) => {
+      const val = snap.val();
+      if (val) { fbSyncRef.current.entries = true; setAllEntries(val); }
+    });
+    // Listen: accounts
+    onValue(ref(db, "accounts"), (snap) => {
+      const val = snap.val();
+      if (val) { fbSyncRef.current.accounts = true; setAllAccounts(val); }
+    });
+    // Listen: games (pets + mutations)
+    onValue(ref(db, "games"), (snap) => {
+      const val = snap.val();
+      if (val) {
+        // Merge with defaults to ensure structure is complete
         const merged = {};
         for (const gid of Object.keys(DEFAULT_GAMES)) {
           const def = DEFAULT_GAMES[gid];
-          const sv = parsed[gid];
+          const sv = val[gid];
           if (sv && sv.pets && Array.isArray(sv.pets)) {
-            // Merge: use saved pets but add any NEW default pets not in saved
             const savedNames = new Set(sv.pets.map((p) => p.name));
             const newPets = def.pets.filter((p) => !savedNames.has(p.name));
             const allPets = [...sv.pets, ...newPets];
-            // Merge mutations similarly
             const savedMuts = new Set(sv.mutations || []);
             const allMuts = [...(sv.mutations || def.mutations)];
             (def.mutations || []).forEach((m) => { if (!savedMuts.has(m)) allMuts.push(m); });
@@ -1102,44 +1152,44 @@ export default function BrainrotTracker() {
             merged[gid] = def;
           }
         }
-        return merged;
+        fbSyncRef.current.games = true;
+        setGames(merged);
       }
-    } catch (e) {
-      // If localStorage is corrupted, clear it and use defaults
-      try { localStorage.removeItem("bt_games"); } catch (x) {}
-    }
-    return DEFAULT_GAMES;
-  });
-  const [selGameId, setSelGameId] = useState("steal_a_brainrot");
-  const [tab, setTab] = useState("tracker");
+    });
+    // Listen: watched pets
+    onValue(ref(db, "watchedPets"), (snap) => {
+      const val = snap.val();
+      if (val) { fbSyncRef.current.watched = true; setWatchedPets(val); }
+    });
+    // Listen: alert threshold
+    onValue(ref(db, "alertThreshold"), (snap) => {
+      const val = snap.val();
+      if (val !== null && val !== undefined) { fbSyncRef.current.threshold = true; setAlertThreshold(val); }
+    });
+    setFbReady(true);
+  }, []);
 
-  // ── Per-game entries: { gameId: [{id, petName, account, msType, msValue, mutation, quantity}] } ──
-  const [allEntries, setAllEntries] = useState(() => {
-    try {
-      const saved = localStorage.getItem("bt_entries");
-      if (saved) return JSON.parse(saved);
-    } catch (e) {}
-    return { steal_a_brainrot: IMPORT_DATA.entries, escape_tsunami: [] };
-  });
-  // ── Per-game accounts ──
-  const [allAccounts, setAllAccounts] = useState(() => {
-    try {
-      const saved = localStorage.getItem("bt_accounts");
-      if (saved) return JSON.parse(saved);
-    } catch (e) {}
-    return { steal_a_brainrot: IMPORT_DATA.accounts, escape_tsunami: [] };
-  });
-
-  // ── Auto-save to localStorage whenever data changes ──
+  // ═══ FIREBASE: Write changes back (skip if change came from Firebase listener) ═══
   useEffect(() => {
-    try { localStorage.setItem("bt_entries", JSON.stringify(allEntries)); } catch (e) {}
-  }, [allEntries]);
+    if (fbSyncRef.current.entries) { fbSyncRef.current.entries = false; return; }
+    if (fbReady) fbWrite("entries", allEntries);
+  }, [allEntries, fbReady]);
   useEffect(() => {
-    try { localStorage.setItem("bt_accounts", JSON.stringify(allAccounts)); } catch (e) {}
-  }, [allAccounts]);
+    if (fbSyncRef.current.accounts) { fbSyncRef.current.accounts = false; return; }
+    if (fbReady) fbWrite("accounts", allAccounts);
+  }, [allAccounts, fbReady]);
   useEffect(() => {
-    try { localStorage.setItem("bt_games", JSON.stringify(games)); } catch (e) {}
-  }, [games]);
+    if (fbSyncRef.current.games) { fbSyncRef.current.games = false; return; }
+    if (fbReady) fbWrite("games", games);
+  }, [games, fbReady]);
+  useEffect(() => {
+    if (fbSyncRef.current.watched) { fbSyncRef.current.watched = false; return; }
+    if (fbReady) fbWrite("watchedPets", watchedPets);
+  }, [watchedPets, fbReady]);
+  useEffect(() => {
+    if (fbSyncRef.current.threshold) { fbSyncRef.current.threshold = false; return; }
+    if (fbReady) fbWrite("alertThreshold", alertThreshold);
+  }, [alertThreshold, fbReady]);
 
   // ── Add form ──
   const [showForm, setShowForm] = useState(false);
@@ -1174,29 +1224,6 @@ export default function BrainrotTracker() {
   const [npHighMs, setNpHighMs] = useState("");
   const [nmName, setNmName] = useState("");
   const [petDbQuery, setPetDbQuery] = useState("");
-
-  // ── Stock Alerts ──
-  const [watchedPets, setWatchedPets] = useState(() => {
-    try {
-      const saved = localStorage.getItem("bt_watched");
-      if (saved) return JSON.parse(saved);
-    } catch (e) {}
-    return { steal_a_brainrot: [...new Set(DEFAULT_WATCHED)] };
-  });
-  const [alertPetQuery, setAlertPetQuery] = useState("");
-  const [alertThreshold, setAlertThreshold] = useState(() => {
-    try {
-      const saved = localStorage.getItem("bt_alert_threshold");
-      if (saved) return JSON.parse(saved);
-    } catch (e) {}
-    return 0; // 0 = out of stock only
-  });
-  useEffect(() => {
-    try { localStorage.setItem("bt_watched", JSON.stringify(watchedPets)); } catch (e) {}
-  }, [watchedPets]);
-  useEffect(() => {
-    try { localStorage.setItem("bt_alert_threshold", JSON.stringify(alertThreshold)); } catch (e) {}
-  }, [alertThreshold]);
 
   // ── Derived ──
   const game = games[selGameId];
