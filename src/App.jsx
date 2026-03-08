@@ -1,25 +1,27 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { initializeApp } from "firebase/app";
-import { getDatabase, ref, set, onValue } from "firebase/database";
 
 // ═══════════════════════════════════════════════════════════════════
-// FIREBASE CONFIG
+// FIREBASE CONFIG (using REST API for simplicity and reliability)
 // ═══════════════════════════════════════════════════════════════════
-const firebaseConfig = {
-  apiKey: "AIzaSyDo7Zj35rAXqzu3t5qT_YM6jfIz0j4Mmj0",
-  authDomain: "brainrot-tracker-34acd.firebaseapp.com",
-  databaseURL: "https://brainrot-tracker-34acd-default-rtdb.firebaseio.com",
-  projectId: "brainrot-tracker-34acd",
-  storageBucket: "brainrot-tracker-34acd.firebasestorage.app",
-  messagingSenderId: "647265442835",
-  appId: "1:647265442835:web:c8b5e173d01c12f3c0f3e6",
-};
-const fbApp = initializeApp(firebaseConfig);
-const db = getDatabase(fbApp);
+const FB_URL = "https://brainrot-tracker-34acd-default-rtdb.firebaseio.com";
 
-// Helper: write to Firebase (debounced)
+// Write to Firebase via REST
 const fbWrite = (path, data) => {
-  try { set(ref(db, path), data); } catch (e) { console.error("Firebase write error:", e); }
+  fetch(`${FB_URL}/${path}.json`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  }).catch((e) => console.error("Firebase write error:", e));
+};
+
+// Read from Firebase via REST
+const fbRead = async (path) => {
+  try {
+    const r = await fetch(`${FB_URL}/${path}.json`);
+    return await r.json();
+  } catch (e) {
+    console.error("Firebase read error:", e);
+    return null;
+  }
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1129,120 +1131,104 @@ const QtyControl = ({ qty, onMinus, onPlus, color }) => (
 // ═══════════════════════════════════════════════════════════════════
 
 export default function BrainrotTracker() {
+  // ── Loading ──
+  const [loading, setLoading] = useState(true);
+
   // ── Core ──
   const [games, setGames] = useState(DEFAULT_GAMES);
   const [selGameId, setSelGameId] = useState("steal_a_brainrot");
   const [tab, setTab] = useState("tracker");
 
   // ── Per-game entries ──
-  const [allEntries, setAllEntries] = useState({ steal_a_brainrot: IMPORT_DATA.entries, escape_tsunami: [] });
+  const [allEntries, setAllEntries] = useState({ steal_a_brainrot: [], escape_tsunami: [] });
   // ── Per-game accounts ──
-  const [allAccounts, setAllAccounts] = useState({ steal_a_brainrot: IMPORT_DATA.accounts, escape_tsunami: [] });
+  const [allAccounts, setAllAccounts] = useState({ steal_a_brainrot: [], escape_tsunami: [] });
 
   // ── Stock Alerts ──
-  const [watchedPets, setWatchedPets] = useState({ steal_a_brainrot: [...new Set(DEFAULT_WATCHED)] });
+  const [watchedPets, setWatchedPets] = useState({ steal_a_brainrot: [] });
   const [alertPetQuery, setAlertPetQuery] = useState("");
   const [alertThreshold, setAlertThreshold] = useState(0);
 
-  // ═══ FIREBASE SYNC ═══
-  // Track whether we're currently processing a Firebase update to avoid loops
-  const isFromFirebase = useRef(false);
-  const loaded = useRef(false);
-
-  // Helper: fix Firebase converting arrays to indexed objects
-  const fixFb = (obj) => {
-    if (!obj || typeof obj !== "object") return obj;
-    if (Array.isArray(obj)) return obj.filter((x) => x != null).map(fixFb);
-    // Check if this object is really an array (all numeric keys)
-    const keys = Object.keys(obj);
-    if (keys.length > 0 && keys.every((k) => /^\d+$/.test(k))) {
-      const arr = [];
-      keys.forEach((k) => { if (obj[k] != null) arr.push(fixFb(obj[k])); });
-      return arr;
-    }
-    const out = {};
-    for (const [k, v] of Object.entries(obj)) out[k] = fixFb(v);
-    return out;
-  };
-
-  // Load from Firebase on mount
+  // ═══ FIREBASE: Load data once on mount ═══
   useEffect(() => {
-    onValue(ref(db, "/"), (snap) => {
-      const val = snap.val();
-      if (!val) return;
-      isFromFirebase.current = true;
-      if (val.entries) setAllEntriesFb(fixFb(val.entries));
-      if (val.accounts) setAllAccountsFb(fixFb(val.accounts));
-      if (val.watchedPets) setWatchedPetsFb(fixFb(val.watchedPets));
-      if (val.alertThreshold !== undefined) setAlertThresholdFb(val.alertThreshold);
-      if (val.games) {
-        const fixed = fixFb(val.games);
-        const merged = {};
-        for (const gid of Object.keys(DEFAULT_GAMES)) {
-          const def = DEFAULT_GAMES[gid];
-          const sv = fixed[gid];
-          if (sv && sv.pets && Array.isArray(sv.pets)) {
-            const savedNames = new Set(sv.pets.map((p) => p.name));
-            const newPets = def.pets.filter((p) => !savedNames.has(p.name));
-            merged[gid] = { ...def, pets: [...sv.pets, ...newPets], mutations: sv.mutations || def.mutations };
-          } else {
-            merged[gid] = def;
+    fbRead("").then((data) => {
+      if (data) {
+        if (data.entries) setAllEntries(data.entries);
+        if (data.accounts) setAllAccounts(data.accounts);
+        if (data.alertThreshold !== undefined) setAlertThreshold(data.alertThreshold);
+        if (data.watchedPets) {
+          const wp = {};
+          for (const [k, v] of Object.entries(data.watchedPets)) {
+            wp[k] = Array.isArray(v) ? v : Object.values(v || {});
           }
+          setWatchedPets(wp);
         }
-        setGamesFb(merged);
+        if (data.games) {
+          const merged = {};
+          for (const gid of Object.keys(DEFAULT_GAMES)) {
+            const def = DEFAULT_GAMES[gid];
+            const sv = data.games[gid];
+            if (sv && sv.pets) {
+              const pets = Array.isArray(sv.pets) ? sv.pets : Object.values(sv.pets || {});
+              const muts = Array.isArray(sv.mutations) ? sv.mutations : Object.values(sv.mutations || {});
+              const savedNames = new Set(pets.map((p) => p.name));
+              const newPets = def.pets.filter((p) => !savedNames.has(p.name));
+              merged[gid] = { ...def, pets: [...pets, ...newPets], mutations: muts.length > 0 ? muts : def.mutations };
+            } else {
+              merged[gid] = def;
+            }
+          }
+          setGames(merged);
+        }
       }
-      loaded.current = true;
-      // Reset flag after React processes the state updates
-      setTimeout(() => { isFromFirebase.current = false; }, 100);
+      // If no data in Firebase yet, push defaults
+      if (!data || !data.entries) {
+        const defE = { steal_a_brainrot: IMPORT_DATA.entries, escape_tsunami: [] };
+        const defA = { steal_a_brainrot: IMPORT_DATA.accounts, escape_tsunami: [] };
+        const defW = { steal_a_brainrot: [...new Set(DEFAULT_WATCHED)] };
+        setAllEntries(defE); setAllAccounts(defA); setWatchedPets(defW);
+        fbWrite("entries", defE);
+        fbWrite("accounts", defA);
+        fbWrite("games", DEFAULT_GAMES);
+        fbWrite("watchedPets", defW);
+        fbWrite("alertThreshold", 0);
+      }
+      setLoading(false);
     });
   }, []);
 
-  // ── Wrapper: update entries AND write to Firebase ──
-  const realSetEntries = setAllEntries;
-  const realSetAccounts = setAllAccounts;
-
-  // Override: every time entries change, also save to Firebase
+  // ═══ Firebase-aware setters ═══
   const setAllEntriesFb = (valOrFn) => {
-    if (isFromFirebase.current) { realSetEntries(valOrFn); return; }
-    realSetEntries((prev) => {
+    setAllEntries((prev) => {
       const next = typeof valOrFn === "function" ? valOrFn(prev) : valOrFn;
       fbWrite("entries", next);
       return next;
     });
   };
   const setAllAccountsFb = (valOrFn) => {
-    if (isFromFirebase.current) { realSetAccounts(valOrFn); return; }
-    realSetAccounts((prev) => {
+    setAllAccounts((prev) => {
       const next = typeof valOrFn === "function" ? valOrFn(prev) : valOrFn;
       fbWrite("accounts", next);
       return next;
     });
   };
-
-  const realSetGames = setGames;
   const setGamesFb = (valOrFn) => {
-    if (isFromFirebase.current) { realSetGames(valOrFn); return; }
-    realSetGames((prev) => {
+    setGames((prev) => {
       const next = typeof valOrFn === "function" ? valOrFn(prev) : valOrFn;
       fbWrite("games", next);
       return next;
     });
   };
-
-  const realSetWatched = setWatchedPets;
   const setWatchedPetsFb = (valOrFn) => {
-    if (isFromFirebase.current) { realSetWatched(valOrFn); return; }
-    realSetWatched((prev) => {
+    setWatchedPets((prev) => {
       const next = typeof valOrFn === "function" ? valOrFn(prev) : valOrFn;
       fbWrite("watchedPets", next);
       return next;
     });
   };
-
-  const realSetThreshold = setAlertThreshold;
   const setAlertThresholdFb = (val) => {
-    realSetThreshold(val);
-    if (!isFromFirebase.current) fbWrite("alertThreshold", val);
+    setAlertThreshold(val);
+    fbWrite("alertThreshold", val);
   };
 
   // ── Add form ──
@@ -1579,6 +1565,15 @@ export default function BrainrotTracker() {
   // ═══════════════════════════════════════════════════════════════
   // RENDER
   // ═══════════════════════════════════════════════════════════════
+
+  if (loading) return (
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0a0a14", color: "#888", fontFamily: "'Nunito', system-ui, sans-serif" }}>
+      <div style={{ textAlign: "center" }}>
+        <div style={{ fontSize: 40, marginBottom: 12 }}>🧠</div>
+        <div style={{ fontSize: 14 }}>Loading tracker data...</div>
+      </div>
+    </div>
+  );
 
   return (
     <>
