@@ -5,23 +5,52 @@ import { useState, useEffect, useRef, useMemo } from "react";
 // ═══════════════════════════════════════════════════════════════════
 const FB_URL = "https://brainrot-tracker-34acd-default-rtdb.firebaseio.com";
 
-// Write to Firebase via REST
-const fbWrite = (path, data) => {
-  fetch(`${FB_URL}/${path}.json`, {
-    method: "PUT",
-    body: JSON.stringify(data),
-  }).catch((e) => console.error("Firebase write error:", e));
+// Write to Firebase via REST — returns true/false for success
+const fbWrite = async (path, data) => {
+  try {
+    const r = await fetch(`${FB_URL}/${path}.json`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+    if (!r.ok) {
+      console.error(`Firebase write FAILED (${r.status}):`, path);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error("Firebase write error:", e);
+    return false;
+  }
 };
 
 // Read from Firebase via REST
 const fbRead = async (path) => {
   try {
     const r = await fetch(`${FB_URL}/${path}.json`);
+    if (!r.ok) {
+      console.error(`Firebase read FAILED (${r.status}):`, path);
+      return null;
+    }
     return await r.json();
   } catch (e) {
     console.error("Firebase read error:", e);
     return null;
   }
+};
+
+// ═══ LOCAL BACKUP: save to localStorage as fallback ═══
+const saveLocalBackup = (data) => {
+  try {
+    localStorage.setItem("bt_backup", JSON.stringify(data));
+    localStorage.setItem("bt_backup_time", new Date().toISOString());
+  } catch (e) {}
+};
+const loadLocalBackup = () => {
+  try {
+    const saved = localStorage.getItem("bt_backup");
+    if (saved) return JSON.parse(saved);
+  } catch (e) {}
+  return null;
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1151,19 +1180,49 @@ export default function BrainrotTracker() {
   const [alertThreshold, setAlertThreshold] = useState(0);
 
   // ═══ SAFE FIREBASE WRITE: never write empty data over existing data ═══
-  const safeFbWrite = (path, data) => {
-    // CRITICAL: never write until initial load is complete
+  const safeFbWrite = async (path, data) => {
     if (!dataLoaded.current) return;
-    // CRITICAL: never write empty entries array (would wipe data)
     if (path === "entries" && data?.steal_a_brainrot?.length === 0) {
-      console.warn("Blocked: attempted to write empty entries to Firebase");
+      console.warn("BLOCKED: attempted to write empty entries to Firebase");
       return;
     }
     if (path === "accounts" && data?.steal_a_brainrot?.length === 0) {
-      console.warn("Blocked: attempted to write empty accounts to Firebase");
+      console.warn("BLOCKED: attempted to write empty accounts to Firebase");
       return;
     }
-    fbWrite(path, data);
+    const ok = await fbWrite(path, data);
+    if (!ok) console.error("Firebase write failed for:", path);
+  };
+
+  // ═══ Helper: apply Firebase data to state ═══
+  const applyData = (data) => {
+    if (data.entries) setAllEntries(data.entries);
+    if (data.accounts) setAllAccounts(data.accounts);
+    if (data.alertThreshold !== undefined) setAlertThreshold(data.alertThreshold);
+    if (data.watchedPets) {
+      const wp = {};
+      for (const [k, v] of Object.entries(data.watchedPets)) {
+        wp[k] = Array.isArray(v) ? v : Object.values(v || {});
+      }
+      setWatchedPets(wp);
+    }
+    if (data.games) {
+      const merged = {};
+      for (const gid of Object.keys(DEFAULT_GAMES)) {
+        const def = DEFAULT_GAMES[gid];
+        const sv = data.games[gid];
+        if (sv && sv.pets) {
+          const pets = Array.isArray(sv.pets) ? sv.pets : Object.values(sv.pets || {});
+          const muts = Array.isArray(sv.mutations) ? sv.mutations : Object.values(sv.mutations || {});
+          const savedNames = new Set(pets.map((p) => p.name));
+          const newPets = def.pets.filter((p) => !savedNames.has(p.name));
+          merged[gid] = { ...def, pets: [...pets, ...newPets], mutations: muts.length > 0 ? muts : def.mutations };
+        } else {
+          merged[gid] = def;
+        }
+      }
+      setGames(merged);
+    }
   };
 
   // ═══ FIREBASE: Load data once on mount ═══
@@ -1172,61 +1231,56 @@ export default function BrainrotTracker() {
     const loadData = () => {
       fbRead("").then((data) => {
         if (data && data.entries) {
-          // Successfully loaded data from Firebase
-          if (data.entries) setAllEntries(data.entries);
-          if (data.accounts) setAllAccounts(data.accounts);
-          if (data.alertThreshold !== undefined) setAlertThreshold(data.alertThreshold);
-          if (data.watchedPets) {
-            const wp = {};
-            for (const [k, v] of Object.entries(data.watchedPets)) {
-              wp[k] = Array.isArray(v) ? v : Object.values(v || {});
-            }
-            setWatchedPets(wp);
-          }
-          if (data.games) {
-            const merged = {};
-            for (const gid of Object.keys(DEFAULT_GAMES)) {
-              const def = DEFAULT_GAMES[gid];
-              const sv = data.games[gid];
-              if (sv && sv.pets) {
-                const pets = Array.isArray(sv.pets) ? sv.pets : Object.values(sv.pets || {});
-                const muts = Array.isArray(sv.mutations) ? sv.mutations : Object.values(sv.mutations || {});
-                const savedNames = new Set(pets.map((p) => p.name));
-                const newPets = def.pets.filter((p) => !savedNames.has(p.name));
-                merged[gid] = { ...def, pets: [...pets, ...newPets], mutations: muts.length > 0 ? muts : def.mutations };
-              } else {
-                merged[gid] = def;
-              }
-            }
-            setGames(merged);
-          }
-          // Mark as loaded — now writes are allowed
+          // ✅ Successfully loaded from Firebase
+          applyData(data);
+          // Save local backup every successful load
+          saveLocalBackup(data);
           dataLoaded.current = true;
           setLoading(false);
-        } else if (!data || Object.keys(data).length === 0) {
-          // Empty database — first time setup, push defaults
-          const defE = { steal_a_brainrot: IMPORT_DATA.entries, escape_tsunami: [] };
-          const defA = { steal_a_brainrot: IMPORT_DATA.accounts, escape_tsunami: [] };
-          const defW = { steal_a_brainrot: [...new Set(DEFAULT_WATCHED)] };
-          setAllEntries(defE); setAllAccounts(defA); setWatchedPets(defW);
-          dataLoaded.current = true;
-          fbWrite("entries", defE);
-          fbWrite("accounts", defA);
-          fbWrite("games", DEFAULT_GAMES);
-          fbWrite("watchedPets", defW);
-          fbWrite("alertThreshold", 0);
+        } else if (!data || Object.keys(data || {}).length === 0) {
+          // 🆕 Empty database — check for local backup first
+          const backup = loadLocalBackup();
+          if (backup && backup.entries) {
+            console.log("Empty Firebase — restoring from local backup");
+            applyData(backup);
+            dataLoaded.current = true;
+            // Push backup to Firebase
+            fbWrite("entries", backup.entries);
+            fbWrite("accounts", backup.accounts);
+            if (backup.games) fbWrite("games", backup.games);
+            if (backup.watchedPets) fbWrite("watchedPets", backup.watchedPets);
+            if (backup.alertThreshold !== undefined) fbWrite("alertThreshold", backup.alertThreshold);
+          } else {
+            // True first time — push defaults
+            const defE = { steal_a_brainrot: IMPORT_DATA.entries, escape_tsunami: [] };
+            const defA = { steal_a_brainrot: IMPORT_DATA.accounts, escape_tsunami: [] };
+            const defW = { steal_a_brainrot: [...new Set(DEFAULT_WATCHED)] };
+            setAllEntries(defE); setAllAccounts(defA); setWatchedPets(defW);
+            dataLoaded.current = true;
+            fbWrite("entries", defE);
+            fbWrite("accounts", defA);
+            fbWrite("games", DEFAULT_GAMES);
+            fbWrite("watchedPets", defW);
+            fbWrite("alertThreshold", 0);
+          }
           setLoading(false);
         } else {
-          // Got some data but no entries — might be corrupted, retry
+          // ⚠️ Partial data — retry
           if (retries < 3) {
             retries++;
             console.warn(`Firebase load incomplete, retry ${retries}/3...`);
-            setTimeout(loadData, 1000);
+            setTimeout(loadData, 1500);
           } else {
-            // After 3 retries, load defaults but DON'T write them to Firebase
-            console.warn("Firebase load failed after retries, using local defaults");
-            setAllEntries({ steal_a_brainrot: IMPORT_DATA.entries, escape_tsunami: [] });
-            setAllAccounts({ steal_a_brainrot: IMPORT_DATA.accounts, escape_tsunami: [] });
+            // Use local backup if available, otherwise defaults
+            const backup = loadLocalBackup();
+            if (backup && backup.entries) {
+              console.log("Firebase incomplete — using local backup");
+              applyData(backup);
+            } else {
+              setAllEntries({ steal_a_brainrot: IMPORT_DATA.entries, escape_tsunami: [] });
+              setAllAccounts({ steal_a_brainrot: IMPORT_DATA.accounts, escape_tsunami: [] });
+            }
+            // DON'T write to Firebase — data might be there but rules blocked us
             dataLoaded.current = true;
             setLoading(false);
           }
@@ -1235,11 +1289,17 @@ export default function BrainrotTracker() {
         console.error("Firebase load error:", err);
         if (retries < 3) {
           retries++;
-          setTimeout(loadData, 1000);
+          setTimeout(loadData, 1500);
         } else {
-          // Network error — load defaults but DON'T overwrite Firebase
-          setAllEntries({ steal_a_brainrot: IMPORT_DATA.entries, escape_tsunami: [] });
-          setAllAccounts({ steal_a_brainrot: IMPORT_DATA.accounts, escape_tsunami: [] });
+          // Network error — use local backup, DON'T overwrite Firebase
+          const backup = loadLocalBackup();
+          if (backup && backup.entries) {
+            console.log("Firebase offline — using local backup");
+            applyData(backup);
+          } else {
+            setAllEntries({ steal_a_brainrot: IMPORT_DATA.entries, escape_tsunami: [] });
+            setAllAccounts({ steal_a_brainrot: IMPORT_DATA.accounts, escape_tsunami: [] });
+          }
           dataLoaded.current = true;
           setLoading(false);
         }
@@ -1248,11 +1308,13 @@ export default function BrainrotTracker() {
     loadData();
   }, []);
 
-  // ═══ Firebase-aware setters (only write after initial load) ═══
+  // ═══ Firebase-aware setters (write + local backup) ═══
   const setAllEntriesFb = (valOrFn) => {
     setAllEntries((prev) => {
       const next = typeof valOrFn === "function" ? valOrFn(prev) : valOrFn;
       safeFbWrite("entries", next);
+      // Also update local backup
+      try { const b = JSON.parse(localStorage.getItem("bt_backup") || "{}"); b.entries = next; saveLocalBackup(b); } catch(e) {}
       return next;
     });
   };
@@ -1260,6 +1322,7 @@ export default function BrainrotTracker() {
     setAllAccounts((prev) => {
       const next = typeof valOrFn === "function" ? valOrFn(prev) : valOrFn;
       safeFbWrite("accounts", next);
+      try { const b = JSON.parse(localStorage.getItem("bt_backup") || "{}"); b.accounts = next; saveLocalBackup(b); } catch(e) {}
       return next;
     });
   };
@@ -1267,6 +1330,7 @@ export default function BrainrotTracker() {
     setGames((prev) => {
       const next = typeof valOrFn === "function" ? valOrFn(prev) : valOrFn;
       safeFbWrite("games", next);
+      try { const b = JSON.parse(localStorage.getItem("bt_backup") || "{}"); b.games = next; saveLocalBackup(b); } catch(e) {}
       return next;
     });
   };
